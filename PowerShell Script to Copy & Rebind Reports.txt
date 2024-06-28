@@ -1,0 +1,66 @@
+# Define the path to the Excel file
+$excelFilePath = "C:\Power BI Backups\Copy & Rebind.xlsx"
+
+# Initialize the worksheet name variable
+$worksheetName = $null
+
+# Loop until a valid input is received
+while ($null -eq $worksheetName) {
+    # Prompt the user for the environment
+    $environment = Read-Host "Are you copying over to Dev, Test, or Custom? (Enter Dev, Test, or Custom)"
+    switch ($environment) {
+        "Dev" {
+            $worksheetName = "Production to Dev"
+            break
+        }
+        "Test" {
+            $worksheetName = "Production to Test"
+            break
+        }
+        "Custom" {
+            $worksheetName = "Custom"
+            break
+        }
+        default {
+            Write-Host "Invalid input. Please enter either 'Dev', 'Test', or 'Custom'."
+        }
+    }
+}
+
+# Connect to the Power BI Service interactively
+Connect-PowerBIServiceAccount
+
+# Read the Excel file containing the report data from the specified tab
+$reports = Import-Excel -Path $excelFilePath -WorksheetName $worksheetName
+
+# Define the base URL for the Power BI API
+$baseUri = "https://api.powerbi.com/v1.0/myorg"
+
+# Iterate through each report in the Excel data
+foreach ($report in $reports) {
+    $cloneUri = "$baseUri/groups/$($report.OriginalWorkspaceID)/reports/$($report.OriginalReportID)/Clone"
+    
+    # Prepare the body for the API request
+    $body = @{
+        name = $report.TargetReportName
+        targetModelId = $report.TargetDatasetID
+        targetWorkspaceId = $report.TargetWorkspaceID
+    } | ConvertTo-Json
+    
+    # Send the POST request to clone and rebind the report
+    try {
+        $response = Invoke-PowerBIRestMethod -Url $cloneUri -Method Post -Body $body
+        $responseData = $response | ConvertFrom-Json
+        
+        # Check if the response contains the expected data
+        if ($responseData -and $responseData.id) {
+            Write-Output "Successfully cloned and rebound report: $($report.OriginalReportName) to $($report.TargetReportName)"
+        } else {
+            Write-Output "Failed to clone report: $($report.OriginalReportName). No valid data returned in response."
+        }
+    } catch {
+        Write-Output "Failed to clone report: $($report.OriginalReportName). Error: $($_.Exception.Message)"
+    }
+}
+
+# Note: Ensure all placeholder paths and values are correctly replaced and that the Excel file and worksheet names are correct.
